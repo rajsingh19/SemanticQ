@@ -3,9 +3,47 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import re
 from abc import ABC, abstractmethod
-from typing import Any, Mapping
+from typing import Any, Mapping, NamedTuple
+
+from qdedup.normalize import normalize
+
+
+class JudgeResult(NamedTuple):
+    """Result of an LLM semantic equivalence judgment."""
+
+    same: bool
+    confidence: float
+    explanation: str = ""
+
+
+# Default question-framing / functional stopwords for content word extraction
+QUESTION_STOP_WORDS = {
+    "what", "is", "are", "do", "does", "did", "you", "understand", "by",
+    "the", "of", "a", "an", "in", "to", "for", "with", "from",
+    "explain", "meaning", "define", "describe", "tell", "give", "me",
+}
+
+
+def extract_content_words(text: str, stop_words: set[str] | None = None) -> set[str]:
+    """Extract content words from text by stripping punctuation and stop words."""
+    stops = QUESTION_STOP_WORDS if stop_words is None else stop_words
+    norm = normalize(text)
+    words = norm.split()
+    content = set(w for w in words if w not in stops)
+    return content or set(words)
+
+
+def compute_jaccard_similarity(text1: str, text2: str, stop_words: set[str] | None = None) -> float:
+    """Compute Jaccard similarity (|A ∩ B| / |A ∪ B|) over content words."""
+    w1 = extract_content_words(text1, stop_words)
+    w2 = extract_content_words(text2, stop_words)
+    inter = len(w1 & w2)
+    union = len(w1 | w2)
+    return inter / union if union > 0 else 0.0
 
 
 class LLMClient(ABC):
@@ -16,21 +54,30 @@ class LLMClient(ABC):
         """Generate a response text for a given prompt."""
         raise NotImplementedError
 
+    @abstractmethod
+    def judge(self, q1: str, q2: str, **kwargs: Any) -> JudgeResult:
+        """Judge whether two questions are semantic duplicates."""
+        raise NotImplementedError
+
 
 class MockLLM(LLMClient):
     """Deterministic mock LLM for testing and running without an API key.
 
-    Produces predictable, reproducible outputs based on configured responses
-    or a deterministic hash of the prompt.
+    Implements a word-overlap judge rule using Jaccard similarity (|A ∩ B| / |A ∪ B|)
+    over content words with a configurable threshold (default 0.6).
     """
 
     def __init__(
         self,
         default_response: str | None = None,
         responses: Mapping[str, str] | None = None,
+        judge_threshold: float = 0.6,
+        stop_words: set[str] | None = None,
     ) -> None:
         self.default_response = default_response
         self.responses: dict[str, str] = dict(responses or {})
+        self.judge_threshold = judge_threshold
+        self.stop_words = set(stop_words) if stop_words is not None else QUESTION_STOP_WORDS
         self.call_history: list[str] = []
 
     def register_response(self, prompt_substring: str, response: str) -> None:
@@ -53,6 +100,34 @@ class MockLLM(LLMClient):
         # 3. Deterministic output generated from prompt digest
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
         return f"[MockLLM-{digest}] Deterministic response for prompt length {len(prompt)}."
+
+    def jaccard_similarity(self, q1: str, q2: str) -> float:
+        """Calculate Jaccard similarity (|A ∩ B| / |A ∪ B|) over content words."""
+        return compute_jaccard_similarity(q1, q2, self.stop_words)
+
+    def judge(self, q1: str, q2: str, **kwargs: Any) -> JudgeResult:
+        """Judge whether two questions are semantic duplicates using Jaccard similarity.
+
+        Uses Jaccard similarity (|A ∩ B| / |A ∪ B|) over content words (not overlap relative
+        to the smaller set). Threshold defaults to 0.6.
+        """
+        threshold = kwargs.get("threshold", self.judge_threshold)
+        sim = self.jaccard_similarity(q1, q2)
+        same = sim >= threshold
+
+        if same:
+            # Scaled confidence between 0.70 and 1.00
+            conf = 0.70 + 0.30 * ((sim - threshold) / (1.0 - threshold) if threshold < 1.0 else 1.0)
+        else:
+            # Scaled confidence that they are different
+            conf = 0.70 + 0.30 * ((threshold - sim) / threshold if threshold > 0 else 1.0)
+
+        conf = round(min(max(conf, 0.0), 1.0), 4)
+        return JudgeResult(
+            same=same,
+            confidence=conf,
+            explanation=f"Content-word Jaccard similarity={sim:.4f} (threshold={threshold})",
+        )
 
 
 class GeminiLLM(LLMClient):
@@ -96,6 +171,32 @@ class GeminiLLM(LLMClient):
             generation_config=generation_config if generation_config else None,
         )
         return response.text or ""
+
+    def judge(self, q1: str, q2: str, **kwargs: Any) -> JudgeResult:
+        """Judge whether two questions are semantic duplicates using Gemini."""
+        prompt = (
+            "You are an expert curriculum evaluator. Compare these two questions:\n"
+            f"Question A: {q1}\n"
+            f"Question B: {q2}\n\n"
+            "Do both questions ask for the exact same core concept/answer, or are they different?\n"
+            "Respond strictly in valid JSON format with keys:\n"
+            '{"same": true/false, "confidence": float between 0.0 and 1.0, "explanation": "short string"}'
+        )
+        raw = self.generate(prompt, temperature=0.0)
+        try:
+            # Extract JSON block if surrounded by markdown code blocks
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                return JudgeResult(
+                    same=bool(data.get("same", False)),
+                    confidence=float(data.get("confidence", 0.5)),
+                    explanation=str(data.get("explanation", "")),
+                )
+        except Exception:
+            pass
+
+        return JudgeResult(same=False, confidence=0.5, explanation=raw)
 
 
 def get_llm_client(
