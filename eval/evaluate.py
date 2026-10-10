@@ -288,61 +288,64 @@ def run_ablation(
         )
     ablation_metrics["(1) hash-only"] = compute_metrics(c1_results)
 
-    # Config 2: Embedding-only (exact hash + cosine >= 0.95 -> DUPLICATE, judge OFF)
-    c2_results: list[EvalItemResult] = []
-    store_c2 = QuestionStore(":memory:")
-    index_c2 = VectorIndex()
-    for i, q in enumerate(corpus):
-        if i == 0:
-            store_c2.add(q, corpus_vecs[q.id])
-            index_c2.add(q.id, corpus_vecs[q.id])
-            continue
-        # Exact hash
-        if any(x.text_hash == q.text_hash for x in store_c2.all()):
-            pred = "EXACT"
-            sc = 1.0
-        else:
-            nbrs = index_c2.search(corpus_vecs[q.id], k=1)
-            sc = nbrs[0][1] if nbrs else 0.0
-            pred = "DUPLICATE" if sc >= 0.95 else "UNIQUE"
-        c2_results.append(
-            EvalItemResult(
-                id=q.id,
-                text=q.text,
-                predicted=pred,
-                expected=expected_map[q.id],
-                score=sc,
-                matched_id=None,
-                method="embedding_only",
-                passed=(pred == expected_map[q.id] or (q.id == "Q8" and pred in {"REVIEW", "UNIQUE"})),
+    # Config 2 & 2b: Embedding-only pipelines (exact hash + cosine >= threshold -> DUPLICATE, judge OFF)
+    def eval_embedding_only(thresh: float, method_name: str) -> list[EvalItemResult]:
+        res: list[EvalItemResult] = []
+        st = QuestionStore(":memory:")
+        idx = VectorIndex()
+        for i, q in enumerate(corpus):
+            if i == 0:
+                st.add(q, corpus_vecs[q.id])
+                idx.add(q.id, corpus_vecs[q.id])
+                continue
+            if any(x.text_hash == q.text_hash for x in st.all()):
+                pred = "EXACT"
+                sc = 1.0
+            else:
+                nbrs = idx.search(corpus_vecs[q.id], k=1)
+                sc = nbrs[0][1] if nbrs else 0.0
+                pred = "DUPLICATE" if sc >= thresh else "UNIQUE"
+            res.append(
+                EvalItemResult(
+                    id=q.id,
+                    text=q.text,
+                    predicted=pred,
+                    expected=expected_map[q.id],
+                    score=sc,
+                    matched_id=None,
+                    method=method_name,
+                    passed=(pred == expected_map[q.id] or (q.id == "Q8" and pred in {"REVIEW", "UNIQUE"})),
+                )
             )
-        )
-        store_c2.add(q, corpus_vecs[q.id])
-        index_c2.add(q.id, corpus_vecs[q.id])
+            st.add(q, corpus_vecs[q.id])
+            idx.add(q.id, corpus_vecs[q.id])
 
-    for e in extra_candidates:
-        q_temp = Question(id=e["id"], text=e["text"])
-        vec = embedder.encode(q_temp)
-        if any(x.text_hash == q_temp.text_hash for x in store_c2.all()):
-            pred = "EXACT"
-            sc = 1.0
-        else:
-            nbrs = index_c2.search(vec, k=1)
-            sc = nbrs[0][1] if nbrs else 0.0
-            pred = "DUPLICATE" if sc >= 0.95 else "UNIQUE"
-        c2_results.append(
-            EvalItemResult(
-                id=e["id"],
-                text=e["text"],
-                predicted=pred,
-                expected=e["expected"],
-                score=sc,
-                matched_id=None,
-                method="embedding_only",
-                passed=(pred == e["expected"] or (e["id"] == "E7" and pred in {"REVIEW", "UNIQUE"})),
+        for e in extra_candidates:
+            q_temp = Question(id=e["id"], text=e["text"])
+            vec = embedder.encode(q_temp)
+            if any(x.text_hash == q_temp.text_hash for x in st.all()):
+                pred = "EXACT"
+                sc = 1.0
+            else:
+                nbrs = idx.search(vec, k=1)
+                sc = nbrs[0][1] if nbrs else 0.0
+                pred = "DUPLICATE" if sc >= thresh else "UNIQUE"
+            res.append(
+                EvalItemResult(
+                    id=e["id"],
+                    text=e["text"],
+                    predicted=pred,
+                    expected=e["expected"],
+                    score=sc,
+                    matched_id=None,
+                    method=method_name,
+                    passed=(pred == e["expected"] or (e["id"] == "E7" and pred in {"REVIEW", "UNIQUE"})),
+                )
             )
-        )
-    ablation_metrics["(2) embedding-only"] = compute_metrics(c2_results)
+        return res
+
+    ablation_metrics["(2) embedding-only"] = compute_metrics(eval_embedding_only(0.88, "embedding_only"))
+    ablation_metrics["(2b) embedding-only, strict 0.95"] = compute_metrics(eval_embedding_only(0.95, "embedding_only_strict"))
 
     # Config 3: Full pipeline
     store_c3 = QuestionStore(":memory:")
@@ -744,9 +747,10 @@ def generate_markdown_report(
         "",
         "## D. Ablation Study",
         "",
-        "Comparison of 3 system configurations across the combined benchmark:",
+        "Comparison of system configurations across the combined benchmark:",
         "1. **Hash-only**: Exact normalized text hash match only.",
-        "2. **Embedding-only**: Cosine $\\ge 0.95$ without LLM review band (REVIEW counted as not-duplicate).",
+        "2. **Embedding-only**: Cosine $\\ge 0.88$ without LLM review band (REVIEW counted as not-duplicate).",
+        "2b. **Embedding-only, strict 0.95**: Cosine $\\ge 0.95$ without LLM review band (REVIEW counted as not-duplicate).",
         "3. **Full pipeline with judge**: Multi-band routing (EXACT $\\to$ high-cosine $\\to$ review band with judge $\\to$ UNIQUE).",
         "",
         "| Configuration | Precision | Recall | F1 Score | TP / FP / TN / FN |",
@@ -757,6 +761,8 @@ def generate_markdown_report(
         md.append(f"| **{cfg}** | {m.precision:.2%} | {m.recall:.2%} | {m.f1:.2%} | {m.tp} / {m.fp} / {m.tn} / {m.fn} |")
 
     md.extend([
+        "",
+        "On this 16-item set, 0.88 alone separates all labels, but the margin is thin (Q3=0.90 vs Q8=0.87); the judge adds robustness, not measurable accuracy, here.",
         "",
         "---",
         "",
@@ -780,7 +786,7 @@ def generate_markdown_report(
         "> - At **$\\tau \\le 0.70$**, non-duplicate questions such as **Q6** and **Q7** flip to False Positives.",
         "> - At **$\\tau \\le 0.85$**, **Q8** flips to False Positive.",
         "> - At **$\\tau > 0.90$**, subtle paraphrases like **Q3** flip to False Negatives.",
-        "> This confirms why the multi-band architecture with LLM review between 0.78 and 0.95 is necessary.",
+        "> This confirms why the multi-band architecture with LLM review between 0.72 and 0.88 (0.72 <= cosine < 0.88) is necessary.",
         "",
         "---",
         "",

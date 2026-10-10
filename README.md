@@ -118,13 +118,16 @@ Ingested sequentially in order $Q_1..Q_{10}$; each question $Q_i$ ($i \ge 2$) is
 
 ### D. Architecture Ablation Study
 
-Comparison across 3 configurations on the combined benchmark:
+Comparison across system configurations on the combined benchmark:
 
 | Configuration | Precision | Recall | F1 Score | TP / FP / TN / FN |
 | :--- | :---: | :---: | :---: | :---: |
 | **(1) Hash-Only** | 100.00% | 28.57% | 44.44% | 2 / 0 / 9 / 5 |
-| **(2) Embedding-Only** (REVIEW counted as not-duplicate) | 100.00% | 71.43% | 83.33% | 5 / 0 / 9 / 2 |
+| **(2) Embedding-Only (0.88)** | 100.00% | 100.00% | 100.00% | 7 / 0 / 9 / 0 |
+| **(2b) Embedding-Only, Strict 0.95** | 100.00% | 71.43% | 83.33% | 5 / 0 / 9 / 2 |
 | **(3) Full Pipeline with Judge** | **100.00%** | **100.00%** | **100.00%** | **7 / 0 / 9 / 0** |
+
+On this 16-item set, 0.88 alone separates all labels, but the margin is thin (Q3=0.90 vs Q8=0.87); the judge adds robustness, not measurable accuracy, here.
 
 ### E. Embedding-Only Cosine Threshold Sweep (0.60 to 0.95)
 

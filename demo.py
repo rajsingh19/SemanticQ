@@ -89,19 +89,37 @@ def main() -> None:
         "UNIQUE": "Novel / distinct question (below review band or judge verified)",
     }
 
+    def get_detection_method(res: Any, det: DuplicateDetector) -> str:
+        if hasattr(res, "method") and getattr(res, "method"):
+            return str(getattr(res, "method"))
+        if res.decision.value == "EXACT":
+            return "hash"
+        elif res.decision.value == "DUPLICATE":
+            return "embedding" if res.score >= det.duplicate_threshold else "llm_judge"
+        elif res.decision.value == "UNIQUE":
+            if res.evaluated_candidates:
+                return "llm_judge"
+            return "embedding" if res.score > 0 else "none"
+        elif res.decision.value == "REVIEW":
+            return "llm_judge" if res.evaluated_candidates else "embedding"
+        return "none"
+
     det_table = Table(title="Duplicate Detection Results", header_style="bold magenta")
     det_table.add_column("Query Text", style="white")
     det_table.add_column("Decision", style="bold green")
+    det_table.add_column("Method", style="cyan")
     det_table.add_column("Score", justify="right")
     det_table.add_column("Matched ID")
     det_table.add_column("Description", style="dim white")
 
     for q_text in test_queries:
         res = detector.detect(q_text)
+        res.method = get_detection_method(res, detector)
         desc = label_descriptions.get(res.decision.value, res.decision.value)
         det_table.add_row(
             q_text,
             res.decision.value,
+            res.method,
             f"{res.score:.4f}",
             res.matched_id or "—",
             desc,
@@ -120,8 +138,8 @@ def main() -> None:
         console.print(f" - {bullet}")
     console.print()
 
-    # 5. Question Generation with Duplicate Prevention
-    console.print("[bold cyan]5. Question Generation with Intra-Batch Duplicate Prevention:[/bold cyan]")
+    # 5. Question Generation with Duplicate Prevention (n=3)
+    console.print("[bold cyan]5. Question Generation with Intra-Batch Duplicate Prevention (n=3):[/bold cyan]")
     generator = QuestionGenerator(llm, selector, detector)
     gen_report = generator.generate("reflection of light", n=3)
 
@@ -140,16 +158,46 @@ def main() -> None:
 
     if gen_report.rejected:
         rejected_table = Table(title="Prevented Duplicates (Filtered Out)", header_style="bold red")
-        rejected_table.add_column("Candidate Text", style="white", width=48)
+        rejected_table.add_column("Candidate Text", style="white")
         rejected_table.add_column("Decision", style="bold red", width=12)
-        rejected_table.add_column("Matched ID", width=10)
-        rejected_table.add_column("Score", justify="right", width=8)
+        rejected_table.add_column("Matched ID", width=14)
+        rejected_table.add_column("Score", justify="right", no_wrap=True, min_width=8)
 
         for r in gen_report.rejected:
             rejected_table.add_row(r["text"], r["decision"], r["matched_id"] or "—", f"{r['score']:.4f}")
 
         console.print(rejected_table)
         console.print()
+
+    # 5b. Multi-Round Generation with Session Feedback (n=5 forces Round 2)
+    console.print("[bold cyan]5b. Multi-Round Generation Demo with Feedback (n=5):[/bold cyan]")
+    store_5b = QuestionStore(":memory:")
+    index_5b = VectorIndex()
+    llm_5b = MockLLM()
+    detector_5b = DuplicateDetector(store_5b, embedder, index_5b, llm_5b)
+    for item in corpus_data:
+        detector_5b.ingest(Question.from_dict(item))
+    selector_5b = ContextSelector(store_5b, embedder, index_5b, max_questions=5, max_tokens=500, n_clusters=4)
+    generator_5b = QuestionGenerator(llm_5b, selector_5b, detector_5b)
+
+    gen_report_5b = generator_5b.generate("reflection of light", n=5)
+
+    console.print(f"Target: 5 questions | Rounds used: [bold]{gen_report_5b.rounds_used}[/bold] | Failed rounds: [bold]{gen_report_5b.failed_rounds}[/bold]")
+    console.print(f"Accepted: [bold green]{len(gen_report_5b.accepted)}[/bold green] | Rejected: [bold red]{len(gen_report_5b.rejected)}[/bold red] | Duplicate rate: [bold]{gen_report_5b.duplicate_rate:.1%}[/bold]\n")
+
+    accepted_table_5b = Table(title="Generated & Accepted Questions (n=5, 2 Rounds)", header_style="bold green")
+    accepted_table_5b.add_column("ID", style="bold yellow", width=12)
+    accepted_table_5b.add_column("Question Text", style="white")
+    for q in gen_report_5b.accepted:
+        accepted_table_5b.add_row(q.id, q.text)
+    console.print(accepted_table_5b)
+    console.print()
+
+    console.print("[bold yellow]Already rejected this session (fed back into Round-2 prompt):[/bold yellow]")
+    rejected_feedback_texts = list(dict.fromkeys(r["text"] for r in gen_report_5b.rejected))
+    for rej_text in rejected_feedback_texts:
+        console.print(f" • [red]{rej_text}[/red]")
+    console.print()
 
     console.print(Panel("[bold green]All systems operational![/bold green]", expand=False))
 

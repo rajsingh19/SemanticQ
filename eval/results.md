@@ -54,16 +54,20 @@ Evaluated against the full pre-populated $Q_1..Q_{10}$ corpus (candidates are ev
 
 ## D. Ablation Study
 
-Comparison of 3 system configurations across the combined benchmark:
+Comparison of system configurations across the combined benchmark:
 1. **Hash-only**: Exact normalized text hash match only.
-2. **Embedding-only**: Cosine $\ge 0.95$ without LLM review band (REVIEW counted as not-duplicate).
+2. **Embedding-only**: Cosine $\ge 0.88$ without LLM review band (REVIEW counted as not-duplicate).
+2b. **Embedding-only, strict 0.95**: Cosine $\ge 0.95$ without LLM review band (REVIEW counted as not-duplicate).
 3. **Full pipeline with judge**: Multi-band routing (EXACT $\to$ high-cosine $\to$ review band with judge $\to$ UNIQUE).
 
 | Configuration | Precision | Recall | F1 Score | TP / FP / TN / FN |
 | :--- | :---: | :---: | :---: | :---: |
 | **(1) hash-only** | 100.00% | 28.57% | 44.44% | 2 / 0 / 9 / 5 |
-| **(2) embedding-only** | 100.00% | 71.43% | 83.33% | 5 / 0 / 9 / 2 |
+| **(2) embedding-only** | 100.00% | 100.00% | 100.00% | 7 / 0 / 9 / 0 |
+| **(2b) embedding-only, strict 0.95** | 100.00% | 71.43% | 83.33% | 5 / 0 / 9 / 2 |
 | **(3) full pipeline** | 100.00% | 100.00% | 100.00% | 7 / 0 / 9 / 0 |
+
+On this 16-item set, 0.88 alone separates all labels, but the margin is thin (Q3=0.90 vs Q8=0.87); the judge adds robustness, not measurable accuracy, here.
 
 ---
 
@@ -87,7 +91,7 @@ Evaluating classification performance of embedding cosine similarity without the
 > - At **$\tau \le 0.70$**, non-duplicate questions such as **Q6** and **Q7** flip to False Positives.
 > - At **$\tau \le 0.85$**, **Q8** flips to False Positive.
 > - At **$\tau > 0.90$**, subtle paraphrases like **Q3** flip to False Negatives.
-> This confirms why the multi-band architecture with LLM review between 0.78 and 0.95 is necessary.
+> This confirms why the multi-band architecture with LLM review between 0.72 and 0.88 (0.72 <= cosine < 0.88) is necessary.
 
 ---
 
@@ -98,5 +102,5 @@ Evaluating classification performance of embedding cosine similarity without the
 
 ## G. System Latency Benchmark
 - Number of `detect()` queries: 100
-- **Mean Latency**: `0.08 ms`
-- **P95 Latency**: `0.13 ms`
+- **Mean Latency**: `0.09 ms`
+- **P95 Latency**: `0.15 ms`
