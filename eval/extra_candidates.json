@@ -1,0 +1,44 @@
+[
+  {
+    "id": "E1",
+    "text": "what is reflection of light",
+    "expected": "EXACT",
+    "notes": "Exact normalized text match of Q1 (different casing/punctuation)"
+  },
+  {
+    "id": "E2",
+    "text": "Explain what is meant by reflection of light.",
+    "expected": "DUPLICATE",
+    "notes": "Semantic duplicate of Q1/Q2"
+  },
+  {
+    "id": "E3",
+    "text": "Define light reflection.",
+    "expected": "DUPLICATE",
+    "notes": "Direct semantic duplicate of Q2/Q4"
+  },
+  {
+    "id": "E4",
+    "text": "Why is the image in a plane mirror laterally inverted?",
+    "expected": "UNIQUE",
+    "notes": "Lateral inversion explanation, unique concept"
+  },
+  {
+    "id": "E5",
+    "text": "What is a retroreflector and where is it used?",
+    "expected": "UNIQUE",
+    "notes": "Special optical device, unique concept"
+  },
+  {
+    "id": "E6",
+    "text": "Draw a ray diagram showing reflection from a plane mirror.",
+    "expected": "UNIQUE",
+    "notes": "Diagram/drawing request, unique format and task"
+  },
+  {
+    "id": "E7",
+    "text": "The angle of incidence is 45°. Find the angle of reflection.",
+    "expected": "REVIEW",
+    "notes": "Ambiguous vs Q7 (different angle numerical); REVIEW or UNIQUE acceptable"
+  }
+]
