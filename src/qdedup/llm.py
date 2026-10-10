@@ -60,11 +60,27 @@ class LLMClient(ABC):
         raise NotImplementedError
 
 
+SCRIPTED_ROUND1_CANDIDATES = [
+    {"question": "Define the reflection of light.", "concept_tested": "definition of light reflection"},
+    {"question": "Describe what is meant by light reflection.", "concept_tested": "meaning of light reflection"},
+    {"question": "Why do we see our image in a plane mirror?", "concept_tested": "image formation in plane mirror"},
+    {"question": "Name two applications of diffuse reflection.", "concept_tested": "applications of diffuse reflection"},
+    {"question": "A ray strikes a mirror at 45°. Find the angle between the incident and reflected ray.", "concept_tested": "law of reflection numerical angle calculation"},
+    {"question": "Describe what is meant by light reflection.", "concept_tested": "meaning of light reflection"},
+]
+
+SCRIPTED_ROUND2_CANDIDATES = [
+    {"question": "State two differences between a plane mirror and a concave mirror image.", "concept_tested": "plane vs concave mirror image comparison"},
+    {"question": "Why does a rough wall not form a clear image of an object?", "concept_tested": "diffuse reflection explanation"},
+]
+
+
 class MockLLM(LLMClient):
     """Deterministic mock LLM for testing and running without an API key.
 
-    Implements a word-overlap judge rule using Jaccard similarity (|A ∩ B| / |A ∪ B|)
-    over content words with a configurable threshold (default 0.6).
+    Implements:
+    - Word-overlap judge rule using Jaccard similarity (|A ∩ B| / |A ∪ B|) over content words.
+    - Scripted generation mode for multi-round question generation testing.
     """
 
     def __init__(
@@ -79,6 +95,11 @@ class MockLLM(LLMClient):
         self.judge_threshold = judge_threshold
         self.stop_words = set(stop_words) if stop_words is not None else QUESTION_STOP_WORDS
         self.call_history: list[str] = []
+        self.scripted_round_counter: int = 0
+
+    def reset_scripted_rounds(self) -> None:
+        """Reset scripted round counter."""
+        self.scripted_round_counter = 0
 
     def register_response(self, prompt_substring: str, response: str) -> None:
         """Register a canned response triggered when prompt contains substring."""
@@ -93,11 +114,19 @@ class MockLLM(LLMClient):
             if key in prompt:
                 return value
 
-        # 2. Use explicit default if provided
+        # 2. Scripted generation mode if prompt requests question generation JSON list
+        if "JSON list" in prompt or "Existing questions" in prompt or "concept_tested" in prompt:
+            if "Already rejected" in prompt or self.scripted_round_counter >= 1:
+                self.scripted_round_counter += 1
+                return json.dumps(SCRIPTED_ROUND2_CANDIDATES, indent=2)
+            self.scripted_round_counter += 1
+            return json.dumps(SCRIPTED_ROUND1_CANDIDATES, indent=2)
+
+        # 3. Use explicit default if provided
         if self.default_response is not None:
             return self.default_response
 
-        # 3. Deterministic output generated from prompt digest
+        # 4. Deterministic output generated from prompt digest
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
         return f"[MockLLM-{digest}] Deterministic response for prompt length {len(prompt)}."
 
