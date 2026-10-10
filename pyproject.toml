@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "question-dedup"
+version = "0.1.0"
+description = "Question deduplication, context selection, and answer generation."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "sentence-transformers",
+    "numpy",
+    "google-generativeai",
+    "python-dotenv",
+    "pytest",
+    "scikit-learn",
+    "rich",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

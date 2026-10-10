@@ -1,0 +1,7 @@
+sentence-transformers
+numpy
+google-generativeai
+python-dotenv
+pytest
+scikit-learn
+rich
