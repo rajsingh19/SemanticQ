@@ -44,6 +44,16 @@ class DetectionResult:
         }
 
 
+@dataclass
+class DetectorConfig:
+    """Configuration for duplicate detector thresholds and LLM judge."""
+
+    dup_threshold: float = 0.88
+    review_threshold: float = 0.72
+    judge_min_confidence: float = 0.70
+    use_llm_judge: bool = True
+
+
 class DuplicateDetector:
     """Multi-band duplicate question detector.
 
@@ -70,14 +80,42 @@ class DuplicateDetector:
         duplicate_threshold: float = 0.95,
         review_threshold: float = 0.78,
         judge_min_confidence: float = 0.70,
+        config: DetectorConfig | None = None,
     ) -> None:
         self.store = store
         self.embedder = embedder
         self.index = index if index is not None else VectorIndex()
         self.llm = llm if llm is not None else MockLLM()
-        self.duplicate_threshold = duplicate_threshold
-        self.review_threshold = review_threshold
-        self.judge_min_confidence = judge_min_confidence
+
+        if config is not None:
+            self._config = config
+            self.duplicate_threshold = config.dup_threshold
+            self.review_threshold = config.review_threshold
+            self.judge_min_confidence = config.judge_min_confidence
+            self.use_llm_judge = config.use_llm_judge
+        else:
+            self.duplicate_threshold = duplicate_threshold
+            self.review_threshold = review_threshold
+            self.judge_min_confidence = judge_min_confidence
+            self.use_llm_judge = True
+            self._config = DetectorConfig(
+                dup_threshold=duplicate_threshold,
+                review_threshold=review_threshold,
+                judge_min_confidence=judge_min_confidence,
+                use_llm_judge=True,
+            )
+
+    @property
+    def config(self) -> DetectorConfig:
+        return self._config
+
+    @config.setter
+    def config(self, cfg: DetectorConfig) -> None:
+        self._config = cfg
+        self.duplicate_threshold = cfg.dup_threshold
+        self.review_threshold = cfg.review_threshold
+        self.judge_min_confidence = cfg.judge_min_confidence
+        self.use_llm_judge = cfg.use_llm_judge
 
     def _resolve_question(self, query: str | Question) -> Question:
         if isinstance(query, Question):
@@ -142,6 +180,15 @@ class DuplicateDetector:
                 matched_id=None,
                 score=round(top_score, 4),
                 explanation=f"Top cosine similarity ({top_score:.4f}) is below review threshold ({self.review_threshold}).",
+            )
+
+        if not getattr(self, "use_llm_judge", True):
+            return DetectionResult(
+                decision=Decision.REVIEW,
+                matched_id=top_id,
+                score=round(top_score, 4),
+                explanation=f"Borderline similarity in review band [{self.review_threshold}, {self.duplicate_threshold}); LLM judge disabled.",
+                evaluated_candidates=[],
             )
 
         evaluated: list[dict[str, Any]] = []
@@ -209,3 +256,6 @@ class DuplicateDetector:
         self.index.add(question.id, vec)
 
         return result
+
+    # Alias for non-ingesting duplicate check
+    check = detect
