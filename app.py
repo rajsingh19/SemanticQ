@@ -5,9 +5,22 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
+
+# Disable SQLite check_same_thread so connections can be safely accessed
+# across Streamlit worker/rerun threads.
+_orig_sqlite_connect = sqlite3.connect
+
+
+def _threadsafe_sqlite_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+    kwargs["check_same_thread"] = False
+    return _orig_sqlite_connect(*args, **kwargs)
+
+
+sqlite3.connect = _threadsafe_sqlite_connect
 
 import pandas as pd
 import streamlit as st
@@ -17,23 +30,32 @@ src_dir = Path(__file__).resolve().parent / "src"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from qdedup.context_selector import ContextSelector
-from qdedup.detector import Decision, DetectorConfig, DuplicateDetector
-from qdedup.embedder import QuestionEmbedder, VectorIndex
-from qdedup.generator import QuestionGenerator
-from qdedup.llm import JudgeResult, MockLLM, get_llm_client
-from qdedup.models import Question
-from qdedup.store import QuestionStore
-
-# Ensure check() method is available on DuplicateDetector
-if not hasattr(DuplicateDetector, "check"):
-    DuplicateDetector.check = DuplicateDetector.detect
-
 st.set_page_config(
     page_title="SemanticQ — Question Deduplication Engine",
     page_icon="🔍",
     layout="wide",
 )
+
+try:
+    from qdedup.context_selector import ContextSelector
+    from qdedup.detector import Decision, DetectorConfig, DuplicateDetector
+    from qdedup.embedder import QuestionEmbedder, VectorIndex
+    from qdedup.generator import QuestionGenerator
+    from qdedup.llm import JudgeResult, MockLLM, get_llm_client
+    from qdedup.models import Question
+    from qdedup.store import QuestionStore
+except ModuleNotFoundError as e:
+    st.error(
+        f"**Missing dependency: `{e.name}`**\n\n"
+        "Streamlit is currently running in an external Python environment instead of the project virtualenv (`.venv`).\n\n"
+        "Please start Streamlit using the virtual environment:\n"
+        "```bash\n"
+        "./.venv/bin/streamlit run app.py\n"
+        "# or\n"
+        "source .venv/bin/activate && streamlit run app.py\n"
+        "```"
+    )
+    st.stop()
 
 
 @st.cache_resource
@@ -50,9 +72,19 @@ def load_base_corpus() -> list[dict[str, Any]]:
         return json.load(f)
 
 
+def is_store_thread_safe() -> bool:
+    if "store" not in st.session_state:
+        return False
+    try:
+        st.session_state.store._conn.execute("SELECT 1")
+        return True
+    except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+        return False
+
+
 def init_session_state(force_reset: bool = False) -> None:
     """Initialize or reset working store, index, detector, and generator."""
-    if force_reset or "store" not in st.session_state:
+    if force_reset or not is_store_thread_safe():
         corpus_data = load_base_corpus()
         embedder = get_shared_embedder()
         store = QuestionStore(":memory:")

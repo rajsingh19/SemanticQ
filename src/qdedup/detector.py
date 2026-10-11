@@ -77,8 +77,8 @@ class DuplicateDetector:
         embedder: QuestionEmbedder,
         index: VectorIndex | None = None,
         llm: LLMClient | None = None,
-        duplicate_threshold: float = 0.95,
-        review_threshold: float = 0.78,
+        duplicate_threshold: float = 0.88,
+        review_threshold: float = 0.72,
         judge_min_confidence: float = 0.70,
         config: DetectorConfig | None = None,
     ) -> None:
@@ -87,23 +87,14 @@ class DuplicateDetector:
         self.index = index if index is not None else VectorIndex()
         self.llm = llm if llm is not None else MockLLM()
 
-        if config is not None:
-            self._config = config
-            self.duplicate_threshold = config.dup_threshold
-            self.review_threshold = config.review_threshold
-            self.judge_min_confidence = config.judge_min_confidence
-            self.use_llm_judge = config.use_llm_judge
-        else:
-            self.duplicate_threshold = duplicate_threshold
-            self.review_threshold = review_threshold
-            self.judge_min_confidence = judge_min_confidence
-            self.use_llm_judge = True
-            self._config = DetectorConfig(
+        if config is None:
+            config = DetectorConfig(
                 dup_threshold=duplicate_threshold,
                 review_threshold=review_threshold,
                 judge_min_confidence=judge_min_confidence,
                 use_llm_judge=True,
             )
+        self.config = config
 
     @property
     def config(self) -> DetectorConfig:

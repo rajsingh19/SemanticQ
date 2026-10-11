@@ -11,8 +11,8 @@ Ingested sequentially in order Q1..Q10; each question $Q_i$ ($i \ge 2$) is evalu
 | ID | Question Text | Predicted | Expected | Cosine Score | Matched ID | Method | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :--- | :---: |
 | **Q2** | Define the reflection of light. | `DUPLICATE` | `DUPLICATE` | 0.9678 | Q1 | `vector_cosine` | **PASS** |
-| **Q3** | What do you understand by the reflection of light? | `DUPLICATE` | `DUPLICATE` | 0.8998 | Q1 | `llm_judge` | **PASS** |
-| **Q4** | Explain the meaning of light reflection. | `DUPLICATE` | `DUPLICATE` | 0.9251 | Q2 | `llm_judge` | **PASS** |
+| **Q3** | What do you understand by the reflection of light? | `DUPLICATE` | `DUPLICATE` | 0.8998 | Q1 | `vector_cosine` | **PASS** |
+| **Q4** | Explain the meaning of light reflection. | `DUPLICATE` | `DUPLICATE` | 0.9251 | Q2 | `vector_cosine` | **PASS** |
 | **Q5** | State the laws of reflection of light. | `UNIQUE` | `UNIQUE` | 0.8000 | — | `judge_distinct` | **PASS** |
 | **Q6** | What is the angle of reflection? | `UNIQUE` | `UNIQUE` | 0.6980 | — | `below_threshold` | **PASS** |
 | **Q7** | The angle of incidence is 30°. What is the angle of reflection? | `UNIQUE` | `UNIQUE` | 0.8307 | — | `judge_distinct` | **PASS** |
@@ -45,6 +45,9 @@ Evaluated against the full pre-populated $Q_1..Q_{10}$ corpus (candidates are ev
 | **Part A (Sequential Q1..Q10)** | 100.00% | 100.00% | 100.00% | 4 / 0 / 5 / 0 |
 | **Part B (Extra Candidates)** | 100.00% | 100.00% | 100.00% | 3 / 0 / 4 / 0 |
 | **Combined (A + B)** | 100.00% | 100.00% | 100.00% | 7 / 0 / 9 / 0 |
+
+> [!NOTE]
+> 100% on a 16-item calibration set, not a generalization claim.
 
 ### Costly Errors Analysis
 - **False Positives (Costly: incorrectly marking unique questions as duplicates)**: None (0 FP)
@@ -102,5 +105,5 @@ Evaluating classification performance of embedding cosine similarity without the
 
 ## G. System Latency Benchmark
 - Number of `detect()` queries: 100
-- **Mean Latency**: `0.09 ms`
-- **P95 Latency**: `0.15 ms`
+- **Mean Latency**: `0.27 ms`
+- **P95 Latency**: `0.57 ms`

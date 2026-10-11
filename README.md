@@ -79,6 +79,48 @@ Run the evaluation script to reproduce metrics, ablation, threshold sweep, and l
 python eval/evaluate.py
 ```
 
+## Running the Web UI
+
+Run the web UI:
+```bash
+streamlit run app.py
+```
+
+![Duplicate check UI](docs/ui_check.png)
+
+---
+
+## Architecture & Workflow
+
+```mermaid
+flowchart TD
+    subgraph Storage ["Shared Storage - Tags for filtering only"]
+        Store[("QuestionStore - SQLite")]
+        Index[("VectorIndex - all-MiniLM-L6-v2")]
+    end
+
+    subgraph GenPath ["Generation Path"]
+        Store -. "tags filter" .-> CS["ContextSelector (KMeans & MMR)"]
+        CS --> LLM["LLM Generator"]
+        LLM --> Candidates["Generated Candidates"]
+        Candidates --> Det["DuplicateDetector"]
+    end
+
+    subgraph DetPath ["Detector Path"]
+        InputQ["Input Question"] --> NormHash["Normalize & Hash"]
+        NormHash --> ExactCheck{"Exact Hash Match?"}
+        ExactCheck -- "Match (1.0)" --> LabelExact["EXACT"]
+        ExactCheck -- "No Match" --> EmbedTopK["Embedding Top-K Similarity"]
+        EmbedTopK --> ThresholdCheck{"Cosine Score"}
+        ThresholdCheck -- "cosine >= 0.88" --> LabelDup["DUPLICATE"]
+        ThresholdCheck -- "0.72 <= cosine < 0.88" --> LLMJudge["LLM Judge (0.72 <= cosine < 0.88)"]
+        ThresholdCheck -- "cosine < 0.72" --> LabelUnique["UNIQUE"]
+        LLMJudge -- "Judged Same" --> LabelDup
+        LLMJudge -- "Judged Distinct" --> LabelUnique
+        LLMJudge -- "Borderline" --> LabelReview["REVIEW"]
+    end
+```
+
 ---
 
 ## Evaluation
@@ -150,6 +192,18 @@ Evaluating classification behavior of raw embedding cosine similarity without th
 > - At **$\tau \le 0.85$**, **Q8** flips to False Positive.
 > - At **$\tau > 0.90$**, subtle paraphrases like **Q3** flip to False Negatives.
 > This demonstrates why the LLM review band ($0.72 \le \text{cosine} < 0.88$) is necessary to resolve borderline cases without compromising precision or recall.
+
+---
+
+## Known Limitations
+
+- **Mock Judge Validated, Real Gemini Judge Pending**: Pipeline is thoroughly validated offline with deterministic `MockLLM`; live Gemini judge evaluation is pending API key configuration (`GEMINI_API_KEY`).
+- **16-Item Calibration Set**: Evaluation metrics are benchmarked on a 16-item calibration set and represent threshold tuning rather than a universal generalization claim.
+- **Thin Margin**: The decision margin between borderline unique questions and duplicates is narrow (e.g. Q3 = 0.90 vs Q8 = 0.87).
+- **Judge Dependency**: 6 of 16 evaluation items depend on the LLM judge for conclusive classification.
+- **Exact Duplicates in Cluster Counts**: Exact duplicates stored in the question corpus are included in cluster candidate counts.
+- **English-Only Model**: The sentence transformer embedding model (`all-MiniLM-L6-v2`) is English-focused.
+- **Latency Scope**: Latency benchmarks are measured on a tiny brute-force vector corpus.
 
 ---
 
