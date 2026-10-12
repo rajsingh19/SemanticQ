@@ -53,3 +53,25 @@ def hash_text(text: str) -> str:
     """
     normalized = normalize(text)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+NUMBER_PATTERN = re.compile(r"\b\d+(?:\.\d+)?(?:\s*(?:°|deg(?:ree)?s?))?", re.IGNORECASE)
+
+
+def extract_numbers(text: str) -> set[str]:
+    """Extract numbers using regex for digits, with or without degree sign or word 'degree'.
+
+    Canonicalizes degree representations so that e.g. '60°', '60 degrees', and '60 degree'
+    normalize to '60°'.
+    """
+    if not text:
+        return set()
+    matches = NUMBER_PATTERN.findall(text)
+    numbers = set()
+    for m in matches:
+        m = m.strip().lower()
+        if not m:
+            continue
+        canon = re.sub(r"\s*deg(?:ree)?s?", "°", m, flags=re.IGNORECASE)
+        numbers.add(canon)
+    return numbers

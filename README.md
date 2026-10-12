@@ -24,7 +24,7 @@ question-dedup/
 │       ├── context_selector.py # Candidate pool pruning, KMeans clustering & MMR diversification
 │       ├── generator.py      # Non-RAG question generation with intra-batch dedup & retry
 │       └── llm.py            # LLMClient interface, GeminiLLM, and deterministic MockLLM
-├── tests/                    # 38 unit & integration tests covering all modules
+├── tests/                    # 42 unit & integration tests covering all modules
 └── eval/                     # Evaluation benchmarks
     ├── evaluate.py           # Evaluation framework (Parts A-G) with rich reporting
     ├── extra_candidates.json # 7 extra labeled out-of-corpus test candidates
@@ -59,7 +59,7 @@ python demo.py
 
 ## Running Tests
 
-Run the full pytest suite (40 tests):
+Run the full pytest suite (42 tests):
 
 ```bash
 pytest -v
@@ -198,6 +198,7 @@ Evaluating classification behavior of raw embedding cosine similarity without th
 ## Known Limitations
 
 - **Presentation variants (fill-in-blank, MCQ, true/false) were NOT caught (0/3): cosine 0.79 / 0.66 / 0.71. Proposed fix: LLM-based rewrite of the candidate into a plain question stem before detection (future work). Regex canonicalization was considered and rejected as brittle.**
+- **Numerical variants (e.g. 30° vs 60°) scored ~0.91 and were wrongly auto-marked DUPLICATE. Fixed with a number guard that routes pairs with different numbers to the judge (validated with the mock judge only). The guard only detects numbers: questions differing by a single concept word (e.g. reflection vs refraction) can still score above the duplicate threshold.**
 - **Mock Judge Validated, Real Gemini Judge Pending**: Pipeline is thoroughly validated offline with deterministic `MockLLM`; live Gemini judge evaluation is pending API key configuration (`GEMINI_API_KEY`).
 - **16-Item Calibration Set**: Evaluation metrics are benchmarked on a 16-item calibration set and represent threshold tuning rather than a universal generalization claim.
 - **Thin Margin**: The decision margin between borderline unique questions and duplicates is narrow (e.g. Q3 = 0.90 vs Q8 = 0.87).

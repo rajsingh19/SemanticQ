@@ -235,3 +235,41 @@ def test_known_limitation_presentation_variants_evaluation_outcome():
 # Alias for test_presentation_variants_evaluation_outcome
 test_presentation_variants_evaluation_outcome = test_known_limitation_presentation_variants_evaluation_outcome
 
+
+def test_extract_numbers():
+    from qdedup.normalize import extract_numbers
+
+    assert extract_numbers("The angle of incidence is 60°. What is the angle of reflection?") == {"60°"}
+    assert extract_numbers("The angle of incidence is 30°. What is the angle of reflection?") == {"30°"}
+    assert extract_numbers("The angle of incidence is 60 degrees. What is the angle of reflection?") == {"60°"}
+    assert extract_numbers("The angle of incidence is 60 degree.") == {"60°"}
+    assert extract_numbers("What is reflection of light?") == set()
+    assert extract_numbers("State 2 laws of reflection.") == {"2"}
+
+
+def test_number_guard_different_angles_not_duplicate_of_q7():
+    """Number guard test: candidate with 60° must NOT be DUPLICATE of Q7 (30°).
+
+    Candidate: 'The angle of incidence is 60°. What is the angle of reflection?'
+    Corpus Q7: 'The angle of incidence is 30°. What is the angle of reflection?'
+    Even though cosine similarity between them is ~0.9114 (>= dup_threshold 0.88),
+    the differing number sets ({'60°'} vs {'30°'}) prevent auto-returning DUPLICATE
+    and route the pair to the LLM judge, which judges them distinct.
+    """
+    store = QuestionStore(":memory:")
+    embedder = QuestionEmbedder()
+    index = VectorIndex()
+    llm = MockLLM()
+    detector = DuplicateDetector(store=store, embedder=embedder, index=index, llm=llm)
+
+    # Ingest Q7
+    q7 = Question(id="Q7", text="The angle of incidence is 30°. What is the angle of reflection?")
+    detector.ingest(q7)
+
+    candidate = Question(id="C_60", text="The angle of incidence is 60°. What is the angle of reflection?")
+    res = detector.detect(candidate)
+
+    assert res.decision != Decision.DUPLICATE
+    assert res.matched_id != "Q7"
+    assert res.decision in {Decision.UNIQUE, Decision.REVIEW}
+

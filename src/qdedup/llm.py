@@ -9,7 +9,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, Mapping, NamedTuple
 
-from qdedup.normalize import normalize
+from qdedup.normalize import extract_numbers, normalize
 
 
 class JudgeResult(NamedTuple):
@@ -139,7 +139,18 @@ class MockLLM(LLMClient):
 
         Uses Jaccard similarity (|A ∩ B| / |A ∪ B|) over content words (not overlap relative
         to the smaller set). Threshold defaults to 0.6.
+        If questions contain differing numbers, they are distinct questions.
         """
+        # If numbers differ, questions represent distinct numerical problems
+        nums1 = extract_numbers(q1)
+        nums2 = extract_numbers(q2)
+        if nums1 != nums2:
+            return JudgeResult(
+                same=False,
+                confidence=0.85,
+                explanation=f"Questions contain differing numerical values ({nums1} vs {nums2})",
+            )
+
         threshold = kwargs.get("threshold", self.judge_threshold)
         sim = self.jaccard_similarity(q1, q2)
         same = sim >= threshold

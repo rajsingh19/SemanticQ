@@ -11,7 +11,7 @@ import numpy as np
 from qdedup.embedder import QuestionEmbedder, VectorIndex
 from qdedup.llm import LLMClient, MockLLM
 from qdedup.models import Question
-from qdedup.normalize import hash_text, normalize
+from qdedup.normalize import extract_numbers, hash_text, normalize
 from qdedup.store import QuestionStore
 
 
@@ -151,8 +151,14 @@ class DuplicateDetector:
 
         top_id, top_score = neighbors[0]
 
-        # 3. High cosine similarity -> DUPLICATE
-        if top_score >= self.duplicate_threshold:
+        # Number guard: extract numbers from candidate and top-matched question
+        top_q = self.store.get(top_id)
+        cand_numbers = extract_numbers(q.text)
+        top_numbers = extract_numbers(top_q.text) if top_q else set()
+        numbers_match = (cand_numbers == top_numbers)
+
+        # 3. High cosine similarity -> DUPLICATE (guarded: number sets must not differ)
+        if top_score >= self.duplicate_threshold and numbers_match:
             return DetectionResult(
                 decision=Decision.DUPLICATE,
                 matched_id=top_id,
@@ -162,7 +168,10 @@ class DuplicateDetector:
 
         # 4. REVIEW Band
         # Filter neighbors whose cosine is >= review_threshold (max top 3)
+        # If numbers differed on high cosine, ensure that top pair is sent to the LLM judge
         review_candidates = [n for n in neighbors if n[1] >= self.review_threshold][:3]
+        if top_score >= self.duplicate_threshold and not any(n[0] == top_id for n in review_candidates):
+            review_candidates.insert(0, (top_id, top_score))
 
         if not review_candidates:
             # Below review threshold -> UNIQUE
@@ -178,7 +187,12 @@ class DuplicateDetector:
                 decision=Decision.REVIEW,
                 matched_id=top_id,
                 score=round(top_score, 4),
-                explanation=f"Borderline similarity in review band [{self.review_threshold}, {self.duplicate_threshold}); LLM judge disabled.",
+                explanation=(
+                    f"Cosine similarity ({top_score:.4f}) >= duplicate threshold ({self.duplicate_threshold}) "
+                    f"but differing number sets ({cand_numbers} vs {top_numbers}); LLM judge disabled."
+                    if top_score >= self.duplicate_threshold
+                    else f"Borderline similarity in review band [{self.review_threshold}, {self.duplicate_threshold}); LLM judge disabled."
+                ),
                 evaluated_candidates=[],
             )
 

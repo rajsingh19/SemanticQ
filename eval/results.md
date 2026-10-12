@@ -105,8 +105,8 @@ Evaluating classification performance of embedding cosine similarity without the
 
 ## G. System Latency Benchmark
 - Number of `detect()` queries: 100
-- **Mean Latency**: `0.18 ms`
-- **P95 Latency**: `0.36 ms`
+- **Mean Latency**: `0.21 ms`
+- **P95 Latency**: `0.38 ms`
 
 ---
 
