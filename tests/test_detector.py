@@ -181,3 +181,53 @@ def test_real_embedder_corpus_sequential_ingestion():
     assert decisions["Q7"] == Decision.UNIQUE
     assert decisions["Q9"] == Decision.UNIQUE
     assert decisions["Q8"] in {Decision.REVIEW, Decision.UNIQUE}
+
+
+@pytest.mark.slow
+def test_known_limitation_presentation_variants_evaluation_outcome():
+    """Known Limitation Test: Presentation variants (fill-in-blank, MCQ, true/false) are NOT caught (0/3).
+
+    Documents current detector behaviour against full Q1..Q10 corpus:
+    - E8 (fill-in-blank): cosine ~0.79 -> UNIQUE (judge_distinct, score in [0.72, 0.88))
+    - E9 (MCQ): cosine ~0.66 -> UNIQUE (below_threshold, score < 0.72)
+    - E10 (true/false): cosine ~0.71 -> UNIQUE (below_threshold, score < 0.72)
+
+    0 of 3 flagged as DUPLICATE or REVIEW.
+    Proposed fix: LLM-based rewrite of the candidate into a plain question stem
+    before detection (future work). Regex canonicalization was considered and
+    rejected as brittle.
+    """
+    corpus_path = Path(__file__).resolve().parent.parent / "data" / "corpus.json"
+    with open(corpus_path, "r", encoding="utf-8") as f:
+        corpus_data = json.load(f)
+
+    corpus = [Question.from_dict(d) for d in corpus_data]
+    store = QuestionStore(":memory:")
+    embedder = QuestionEmbedder()
+    index = VectorIndex()
+    llm = MockLLM(judge_threshold=0.6)
+    detector = DuplicateDetector(store, embedder, index, llm)
+    for q in corpus:
+        detector.ingest(q)
+
+    variants = [
+        ("E8", "Reflection of light is the ___ of light from a surface. (Fill in the blank)"),
+        ("E9", "Which of the following describes reflection of light? (a) bending of light (b) bouncing back of light from a surface (c) absorption of light (d) splitting of light"),
+        ("E10", "True or False: Reflection of light is the bouncing back of light from a surface."),
+    ]
+
+    results = {}
+    for vid, text in variants:
+        res = detector.detect(Question(id=vid, text=text))
+        results[vid] = res
+
+    # Document actual outcomes: all three currently classify as UNIQUE (0 of 3 flagged)
+    assert results["E8"].decision == Decision.UNIQUE
+    assert results["E9"].decision == Decision.UNIQUE
+    assert results["E10"].decision == Decision.UNIQUE
+    # E8 is routed to review band and judged distinct
+    assert 0.72 <= results["E8"].score < 0.88
+    # E9 and E10 are below review threshold
+    assert results["E9"].score < 0.72
+    assert results["E10"].score < 0.72
+

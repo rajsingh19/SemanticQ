@@ -40,5 +40,23 @@
     "text": "The angle of incidence is 45°. Find the angle of reflection.",
     "expected": "REVIEW",
     "notes": "Ambiguous vs Q7 (different angle numerical); REVIEW or UNIQUE acceptable"
+  },
+  {
+    "id": "E8",
+    "text": "Reflection of light is the ___ of light from a surface. (Fill in the blank)",
+    "expected": "DUPLICATE or REVIEW",
+    "notes": "Presentation variant (fill-in-the-blank); expected DUPLICATE or REVIEW"
+  },
+  {
+    "id": "E9",
+    "text": "Which of the following describes reflection of light? (a) bending of light (b) bouncing back of light from a surface (c) absorption of light (d) splitting of light",
+    "expected": "DUPLICATE or REVIEW",
+    "notes": "Presentation variant (MCQ); expected DUPLICATE or REVIEW"
+  },
+  {
+    "id": "E10",
+    "text": "True or False: Reflection of light is the bouncing back of light from a surface.",
+    "expected": "DUPLICATE or REVIEW",
+    "notes": "Presentation variant (True/False); expected DUPLICATE or REVIEW"
   }
 ]

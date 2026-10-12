@@ -59,7 +59,7 @@ python demo.py
 
 ## Running Tests
 
-Run the full pytest suite (38 tests):
+Run the full pytest suite (39 tests):
 
 ```bash
 pytest -v
@@ -197,6 +197,7 @@ Evaluating classification behavior of raw embedding cosine similarity without th
 
 ## Known Limitations
 
+- **Presentation variants (fill-in-blank, MCQ, true/false) were NOT caught (0/3): cosine 0.79 / 0.66 / 0.71. Proposed fix: LLM-based rewrite of the candidate into a plain question stem before detection (future work). Regex canonicalization was considered and rejected as brittle.**
 - **Mock Judge Validated, Real Gemini Judge Pending**: Pipeline is thoroughly validated offline with deterministic `MockLLM`; live Gemini judge evaluation is pending API key configuration (`GEMINI_API_KEY`).
 - **16-Item Calibration Set**: Evaluation metrics are benchmarked on a 16-item calibration set and represent threshold tuning rather than a universal generalization claim.
 - **Thin Margin**: The decision margin between borderline unique questions and duplicates is narrow (e.g. Q3 = 0.90 vs Q8 = 0.87).

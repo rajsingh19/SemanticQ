@@ -105,5 +105,21 @@ Evaluating classification performance of embedding cosine similarity without the
 
 ## G. System Latency Benchmark
 - Number of `detect()` queries: 100
-- **Mean Latency**: `0.27 ms`
-- **P95 Latency**: `0.57 ms`
+- **Mean Latency**: `0.18 ms`
+- **P95 Latency**: `0.36 ms`
+
+---
+
+## Presentation variants
+
+Evaluation of presentation-style variants (fill-in-the-blank, multiple choice options, and True/False phrasing) checked against the full $Q_1..Q_{10}$ corpus. Evaluated separately from the 16-item headline metrics: **0 of 3 flagged** (0/3 detected as DUPLICATE or REVIEW).
+
+| ID | Presentation Variant Question Text | Predicted Label | Expected Label | Method | Cosine Score | Status | Actual Outcome / Analysis |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **E8** | Reflection of light is the ___ of light from a surface. (Fill in the blank) | `UNIQUE` | `DUPLICATE or REVIEW` | `judge_distinct` | 0.7889 | **FAIL** | Routed to review band ($0.72 \le 0.7889 < 0.88$). Mock judge compared content words against $Q_{10}$/$Q_2$; content-word Jaccard overlap was 0.4000 (< 0.60 threshold due to 'fill', 'blank', 'surface'), judging them distinct. |
+| **E9** | Which of the following describes reflection of light? (a) bending of light (b) bouncing back of light from a surface (c) absorption of light (d) splitting of light | `UNIQUE` | `DUPLICATE or REVIEW` | `below_threshold` | 0.6550 | **FAIL** | Heavy multiple-choice distractor text ('bending', 'absorption', 'splitting') diluted embedding similarity below the review threshold (0.72). |
+| **E10** | True or False: Reflection of light is the bouncing back of light from a surface. | `UNIQUE` | `DUPLICATE or REVIEW` | `below_threshold` | 0.7114 | **FAIL** | Boolean prefix ('True or False:') and declarative statement structure shifted the embedding just below the review threshold (0.7114 < 0.72). |
+
+### Known Limitation & Proposed Fix
+- **Outcome**: Presentation variants (fill-in-blank, MCQ, true/false) were NOT caught (0/3): cosine 0.79 / 0.66 / 0.71.
+- **Proposed fix**: LLM-based rewrite of the candidate into a plain question stem before detection (future work). Regex canonicalization was considered and rejected as brittle.

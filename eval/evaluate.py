@@ -64,7 +64,7 @@ def compute_metrics(
 
     for r in results:
         # Determine actual label
-        actual_pos = r.expected in positive_labels
+        actual_pos = (r.expected in positive_labels) or ("DUPLICATE" in r.expected)
         # Determine predicted label
         pred_pos = r.predicted in positive_labels
 
@@ -189,6 +189,10 @@ def run_extra_eval(
             # Ambiguous vs Q7; REVIEW or UNIQUE acceptable
             passed = pred in {"REVIEW", "UNIQUE"}
             notes = "REVIEW/UNIQUE acceptable"
+        elif cid in {"E8", "E9", "E10"}:
+            # Presentation variants; expected DUPLICATE or REVIEW
+            passed = pred in {"DUPLICATE", "REVIEW"}
+            notes = "DUPLICATE/REVIEW expected"
         else:
             passed = (pred == exp)
             notes = ""
@@ -339,7 +343,11 @@ def run_ablation(
                     score=sc,
                     matched_id=None,
                     method=method_name,
-                    passed=(pred == e["expected"] or (e["id"] == "E7" and pred in {"REVIEW", "UNIQUE"})),
+                    passed=(
+                        pred == e["expected"]
+                        or (e["id"] == "E7" and pred in {"REVIEW", "UNIQUE"})
+                        or (e["id"] in {"E8", "E9", "E10"} and pred in {"DUPLICATE", "REVIEW"})
+                    ),
                 )
             )
         return res
@@ -443,7 +451,11 @@ def run_threshold_sweep(
                     score=sc,
                     matched_id=None,
                     method="embedding_only",
-                    passed=(pred == e["expected"] or (e["id"] == "E7" and pred in {"REVIEW", "UNIQUE"})),
+                    passed=(
+                        pred == e["expected"]
+                        or (e["id"] == "E7" and pred in {"REVIEW", "UNIQUE"})
+                        or (e["id"] in {"E8", "E9", "E10"} and pred in {"DUPLICATE", "REVIEW"})
+                    ),
                 )
             )
 
@@ -505,22 +517,28 @@ def main() -> None:
     # Load extra candidates
     extra_path = root_dir / "eval" / "extra_candidates.json"
     with open(extra_path, "r", encoding="utf-8") as f:
-        extra_candidates = json.load(f)
+        all_extra = json.load(f)
+
+    # Core extra candidates (E1-E7) for headline evaluation (Part B)
+    core_extra = [item for item in all_extra if item["id"] in {"E1", "E2", "E3", "E4", "E5", "E6", "E7"}]
+    # Presentation variants (E8-E10) reported separately
+    presentation_extra = [item for item in all_extra if item["id"] in {"E8", "E9", "E10"}]
 
     embedder = QuestionEmbedder()
 
     # Part A: Sequential eval on Q1..Q10
     results_a, detector_a = run_sequential_eval(corpus, embedder)
 
-    # Part B: Extra candidates against full corpus
+    # Part B: Extra candidates against full corpus (Core E1-E7)
     store_full = QuestionStore(":memory:")
     index_full = VectorIndex()
     detector_full = DuplicateDetector(store_full, embedder, index_full, MockLLM())
     for q in corpus:
         detector_full.ingest(q)
-    results_b = run_extra_eval(extra_candidates, detector_full)
+    results_b = run_extra_eval(core_extra, detector_full)
+    results_presentation = run_extra_eval(presentation_extra, detector_full)
 
-    # Combined results
+    # Combined core results (Part A + Part B = 16 items)
     combined_results = results_a + results_b
 
     # 1. Print Part A Table
@@ -550,8 +568,8 @@ def main() -> None:
     console.print(table_a)
     console.print()
 
-    # 2. Print Part B Table
-    table_b = Table(title="Part B: Extra Labeled Candidates (Evaluated Against Full Corpus)", header_style="bold cyan")
+    # 2. Print Part B Table (Core E1-E7)
+    table_b = Table(title="Part B: Extra Labeled Candidates (Core E1-E7, Evaluated Against Full Corpus)", header_style="bold cyan")
     table_b.add_column("ID", style="bold yellow", width=6)
     table_b.add_column("Candidate Text", style="white", width=44)
     table_b.add_column("Predicted", style="bold green", width=12)
@@ -577,12 +595,12 @@ def main() -> None:
     console.print(table_b)
     console.print()
 
-    # 3. Part C: Metrics & Confusion Matrix
+    # 3. Part C: Headline Metrics & Confusion Matrix (Core 16 items)
     metrics_a = compute_metrics(results_a)
     metrics_b = compute_metrics(results_b)
     metrics_comb = compute_metrics(combined_results)
 
-    table_c = Table(title="Part C: Classification Performance Metrics (Positive = EXACT + DUPLICATE)", header_style="bold cyan")
+    table_c = Table(title="Part C: Headline Classification Performance Metrics (Positive = EXACT + DUPLICATE, 16 Items)", header_style="bold cyan")
     table_c.add_column("Dataset Partition", style="bold yellow")
     table_c.add_column("Precision", justify="right")
     table_c.add_column("Recall", justify="right")
@@ -590,15 +608,15 @@ def main() -> None:
     table_c.add_column("TP / FP / TN / FN", justify="center")
 
     table_c.add_row("Part A (Sequential Q1..Q10)", f"{metrics_a.precision:.2%}", f"{metrics_a.recall:.2%}", f"{metrics_a.f1:.2%}", f"{metrics_a.tp} / {metrics_a.fp} / {metrics_a.tn} / {metrics_a.fn}")
-    table_c.add_row("Part B (Extra Candidates)", f"{metrics_b.precision:.2%}", f"{metrics_b.recall:.2%}", f"{metrics_b.f1:.2%}", f"{metrics_b.tp} / {metrics_b.fp} / {metrics_b.tn} / {metrics_b.fn}")
-    table_c.add_row("Combined (A + B)", f"{metrics_comb.precision:.2%}", f"{metrics_comb.recall:.2%}", f"{metrics_comb.f1:.2%}", f"{metrics_comb.tp} / {metrics_comb.fp} / {metrics_comb.tn} / {metrics_comb.fn}")
+    table_c.add_row("Part B (Core Extra Candidates)", f"{metrics_b.precision:.2%}", f"{metrics_b.recall:.2%}", f"{metrics_b.f1:.2%}", f"{metrics_b.tp} / {metrics_b.fp} / {metrics_b.tn} / {metrics_b.fn}")
+    table_c.add_row("Combined (A + B, 16 Items)", f"{metrics_comb.precision:.2%}", f"{metrics_comb.recall:.2%}", f"{metrics_comb.f1:.2%}", f"{metrics_comb.tp} / {metrics_comb.fp} / {metrics_comb.tn} / {metrics_comb.fn}")
 
     console.print(table_c)
     console.print()
 
-    # 4. Part D: Ablation
-    ablation_res = run_ablation(corpus, extra_candidates, embedder)
-    table_d = Table(title="Part D: Architecture Ablation Study (Combined A + B)", header_style="bold cyan")
+    # 4. Part D: Ablation (Core 16 items)
+    ablation_res = run_ablation(corpus, core_extra, embedder)
+    table_d = Table(title="Part D: Architecture Ablation Study (Combined Core 16 Items)", header_style="bold cyan")
     table_d.add_column("Configuration", style="bold yellow")
     table_d.add_column("Precision", justify="right")
     table_d.add_column("Recall", justify="right")
@@ -611,9 +629,9 @@ def main() -> None:
     console.print(table_d)
     console.print()
 
-    # 5. Part E: Threshold Sweep
-    sweep_res = run_threshold_sweep(corpus, extra_candidates, embedder)
-    table_e = Table(title="Part E: Embedding-Only Cosine Threshold Sweep (0.60 to 0.95)", header_style="bold cyan")
+    # 5. Part E: Threshold Sweep (Core 16 items)
+    sweep_res = run_threshold_sweep(corpus, core_extra, embedder)
+    table_e = Table(title="Part E: Embedding-Only Cosine Threshold Sweep (Core 16 Items, 0.60 to 0.95)", header_style="bold cyan")
     table_e.add_column("Threshold", justify="center", style="bold yellow")
     table_e.add_column("Precision", justify="right")
     table_e.add_column("Recall", justify="right")
@@ -636,7 +654,36 @@ def main() -> None:
     console.print(table_e)
     console.print()
 
-    # 6. Part F: Gemini Real Judge Check
+    # 6. Presentation Variants (Evaluated Separately)
+    flagged_p = sum(1 for r in results_presentation if r.predicted in {"DUPLICATE", "REVIEW"})
+    table_p = Table(
+        title=f"Presentation Variants (Evaluated Separately: {flagged_p} of {len(results_presentation)} flagged)",
+        header_style="bold cyan",
+    )
+    table_p.add_column("ID", style="bold yellow", width=6)
+    table_p.add_column("Variant Question Text", style="white", width=44)
+    table_p.add_column("Predicted", style="bold green", width=12)
+    table_p.add_column("Expected", style="bold magenta", width=12)
+    table_p.add_column("Score", justify="right", width=8)
+    table_p.add_column("Method", width=16)
+    table_p.add_column("Status", width=10)
+
+    for r in results_presentation:
+        status_str = "[green]PASS[/green]" if r.passed else "[red]FAIL[/red]"
+        table_p.add_row(
+            r.id,
+            r.text,
+            r.predicted,
+            r.expected,
+            f"{r.score:.4f}",
+            r.method,
+            status_str,
+        )
+
+    console.print(table_p)
+    console.print()
+
+    # 7. Part F: Gemini Real Judge Check
     api_key = os.getenv("GEMINI_API_KEY")
     gemini_status = ""
     if api_key:
@@ -644,7 +691,7 @@ def main() -> None:
         gemini_llm = GeminiLLM(api_key=api_key)
         res_gemini_seq, _ = run_sequential_eval(corpus, embedder, gemini_llm)
         det_gemini_full = DuplicateDetector(store_full, embedder, index_full, gemini_llm)
-        res_gemini_extra = run_extra_eval(extra_candidates, det_gemini_full)
+        res_gemini_extra = run_extra_eval(core_extra, det_gemini_full)
         gemini_metrics = compute_metrics(res_gemini_seq + res_gemini_extra)
         gemini_status = f"Precision: {gemini_metrics.precision:.2%}, Recall: {gemini_metrics.recall:.2%}, F1: {gemini_metrics.f1:.2%}"
         console.print(f"Gemini Real Judge Results: {gemini_status}")
@@ -653,15 +700,16 @@ def main() -> None:
         console.print(f"[bold yellow]Part F: {gemini_status}[/bold yellow]")
     console.print()
 
-    # 7. Part G: Latency
+    # 8. Part G: Latency
     mean_lat, p95_lat = measure_latency(detector_full, corpus)
     console.print(Panel(f"[bold cyan]Part G: Latency Benchmark (100 check() calls)[/bold cyan]\nMean Latency: [bold]{mean_lat} ms[/bold]\nP95 Latency:  [bold]{p95_lat} ms[/bold]", expand=False))
     console.print()
 
-    # 8. Save results to eval/results.md
+    # 9. Save results to eval/results.md
     md_content = generate_markdown_report(
         results_a=results_a,
         results_b=results_b,
+        results_presentation=results_presentation,
         metrics_a=metrics_a,
         metrics_b=metrics_b,
         metrics_comb=metrics_comb,
@@ -682,6 +730,7 @@ def main() -> None:
 def generate_markdown_report(
     results_a: list[EvalItemResult],
     results_b: list[EvalItemResult],
+    results_presentation: list[EvalItemResult],
     metrics_a: ClassificationMetrics,
     metrics_b: ClassificationMetrics,
     metrics_comb: ClassificationMetrics,
@@ -802,6 +851,35 @@ def generate_markdown_report(
         "- Number of `detect()` queries: 100",
         f"- **Mean Latency**: `{mean_lat} ms`",
         f"- **P95 Latency**: `{p95_lat} ms`",
+        "",
+        "---",
+        "",
+        "## Presentation variants",
+        "",
+        "Evaluation of presentation-style variants (fill-in-the-blank, multiple choice options, and True/False phrasing) checked against the full $Q_1..Q_{10}$ corpus. Evaluated separately from the 16-item headline metrics: **0 of 3 flagged** (0/3 detected as DUPLICATE or REVIEW).",
+        "",
+        "| ID | Presentation Variant Question Text | Predicted Label | Expected Label | Method | Cosine Score | Status | Actual Outcome / Analysis |",
+        "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |",
+    ])
+
+    for r in results_presentation:
+        st = "PASS" if r.passed else "FAIL"
+        if r.id == "E8":
+            analysis = "Routed to review band ($0.72 \\le 0.7889 < 0.88$). Mock judge compared content words against $Q_{10}$/$Q_2$; content-word Jaccard overlap was 0.4000 (< 0.60 threshold due to 'fill', 'blank', 'surface'), judging them distinct."
+        elif r.id == "E9":
+            analysis = "Heavy multiple-choice distractor text ('bending', 'absorption', 'splitting') diluted embedding similarity below the review threshold (0.72)."
+        elif r.id == "E10":
+            analysis = "Boolean prefix ('True or False:') and declarative statement structure shifted the embedding just below the review threshold (0.7114 < 0.72)."
+        else:
+            analysis = r.notes
+
+        md.append(f"| **{r.id}** | {r.text} | `{r.predicted}` | `{r.expected}` | `{r.method}` | {r.score:.4f} | **{st}** | {analysis} |")
+
+    md.extend([
+        "",
+        "### Known Limitation & Proposed Fix",
+        "- **Outcome**: Presentation variants (fill-in-blank, MCQ, true/false) were NOT caught (0/3): cosine 0.79 / 0.66 / 0.71.",
+        "- **Proposed fix**: LLM-based rewrite of the candidate into a plain question stem before detection (future work). Regex canonicalization was considered and rejected as brittle.",
     ])
 
     return "\n".join(md)
