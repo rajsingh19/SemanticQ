@@ -231,3 +231,7 @@ def test_known_limitation_presentation_variants_evaluation_outcome():
     assert results["E9"].score < 0.72
     assert results["E10"].score < 0.72
 
+
+# Alias for test_presentation_variants_evaluation_outcome
+test_presentation_variants_evaluation_outcome = test_known_limitation_presentation_variants_evaluation_outcome
+

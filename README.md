@@ -59,7 +59,7 @@ python demo.py
 
 ## Running Tests
 
-Run the full pytest suite (39 tests):
+Run the full pytest suite (40 tests):
 
 ```bash
 pytest -v
